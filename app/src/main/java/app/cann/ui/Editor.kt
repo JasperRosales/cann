@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -112,11 +113,28 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, startAi: Boo
             navigationIcon = { IconButton(onClose) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } },
             actions = {
                 IconButton({ aiOpen = true }) { Icon(Icons.Outlined.AutoAwesome, "Ask AI", tint = P.accent) }
-                IconButton({ saveTpl = true }, enabled = steps.isNotEmpty()) { Icon(Icons.Outlined.BookmarkAdd, "Save as template") }
-                if (id != null) IconButton({ confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete") }
+                var menu by remember { mutableStateOf(false) }
                 if (id != null) IconButton({ Scheduler.sync(ctx, build()); Scheduler.runNow(ctx, orig.id) },
                     enabled = badArgs < 0 && steps.isNotEmpty()) { Icon(Icons.Outlined.PlayArrow, "Save & run", tint = P.success) }
-                Button(::save, enabled = badArgs < 0, modifier = Modifier.padding(end = 8.dp)) { Text("Save") }
+                Button(::save, enabled = badArgs < 0) { Text("Save") }
+                Box {
+                    IconButton({ menu = true }) { Icon(Icons.Outlined.MoreVert, "More") }
+                    DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem({ Text("Save as template") }, { menu = false; saveTpl = true },
+                            leadingIcon = { Icon(Icons.Outlined.BookmarkAdd, null) }, enabled = steps.isNotEmpty())
+                        DropdownMenuItem({ Text("Duplicate flow") }, {
+                            menu = false
+                            Scheduler.sync(ctx, build().copy(id = UUID.randomUUID().toString(), name = name.trim().ifEmpty { "Untitled flow" } + " (copy)",
+                                enabled = false, nextRunAt = null))
+                            android.widget.Toast.makeText(ctx, "Saved a copy (paused)", android.widget.Toast.LENGTH_SHORT).show()
+                        }, leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }, enabled = badArgs < 0)
+                        if (id != null) DropdownMenuItem({ Text("Clear run logs") }, {
+                            menu = false; store.clearRuns(orig.id); resetTests()
+                        }, leadingIcon = { Icon(Icons.Outlined.DeleteSweep, null) }, enabled = lastRun != null)
+                        if (id != null) DropdownMenuItem({ Text("Delete flow", color = P.danger) }, { menu = false; confirmDelete = true },
+                            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = P.danger) })
+                    }
+                }
             },
         )
     }) { pad ->
@@ -189,7 +207,8 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, startAi: Boo
     openStep?.takeIf { it in steps.indices }?.let { i ->
         ModalBottomSheet({ openStep = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = P.surfaceLo) {
-            NodeSheet(i, steps[i], steps.size, issues[i], resultOf(i), skipped(i), db.settings, { priorOutputs(i) },
+            NodeSheet(i, steps.toList(), issues[i], resultOf(i), skipped(i), db.settings, { priorOutputs(i) },
+                onDuplicate = { steps.add(i + 1, steps[i]); resetTests(); openStep = i + 1 },
                 onTested = { r, d -> tests[i] = r; testData[i] = d },
                 onChange = { steps[i] = it },
                 onDelete = { steps.removeAt(i); resetTests(); openStep = null },
@@ -248,7 +267,7 @@ private fun StepNode(i: Int, s: Step, issues: List<Issue>, res: StepResult?, ski
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box {
             Box(Modifier.size(NodeSize).clip(shape).background(P.surfaceHi).border(2.dp, border, shape).clickable(onClick = onClick)
-                .then(if (skipped) Modifier.background(P.bgDeep.copy(alpha = 0.5f)) else Modifier),
+                .then(if (skipped || s.disabled) Modifier.background(P.bgDeep.copy(alpha = 0.5f)) else Modifier),
                 contentAlignment = Alignment.Center) {
                 StepIcon(s, 48.dp)
             }
@@ -263,7 +282,8 @@ private fun StepNode(i: Int, s: Step, issues: List<Issue>, res: StepResult?, ski
         NodeLabel(s.note.ifBlank { s.toolSlug }, s.toolSlug)
         val msg = issues.firstOrNull()?.let { it.message to (if (it.error) P.danger else P.warn) }
             ?: res?.takeIf { !it.ok }?.let { "Failed · " + (Lint.hint(it.output) ?: it.output) to P.danger }
-            ?: if (skipped) "Not reached last run" to P.muted else null
+            ?: if (s.disabled) "Disabled · skipped" to P.muted
+            else if (skipped) "Not reached last run" to P.muted else null
         msg?.let { (t, c) ->
             Text(t + if (issues.size > 1) "  (+${issues.size - 1})" else "", color = c, fontSize = 11.sp, maxLines = 2,
                 overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 240.dp).clickable(onClick = onClick))
@@ -334,10 +354,14 @@ private fun AddNode(onClick: () -> Unit) {
 
 @Composable
 private fun NodeSheet(
-    i: Int, s: Step, count: Int, issues: List<Issue>, res: StepResult?, skipped: Boolean,
-    settings: Settings, prior: () -> List<JsonElement>, onTested: (StepResult, JsonElement) -> Unit,
+    i: Int, all: List<Step>, issues: List<Issue>, res: StepResult?, skipped: Boolean,
+    settings: Settings, prior: () -> List<JsonElement>, onDuplicate: () -> Unit, onTested: (StepResult, JsonElement) -> Unit,
     onChange: (Step) -> Unit, onDelete: () -> Unit, onMove: (Int) -> Unit,
 ) {
+    val s = all[i]; val count = all.size
+    var argsTf by remember(i) { mutableStateOf(TextFieldValue(s.args)) }
+    LaunchedEffect(s.args) { if (argsTf.text != s.args) argsTf = TextFieldValue(s.args) }
+    var picking by remember { mutableStateOf(false) }
     val valid = remember(s.args) { validArgs(s.args) }
     val scope = rememberCoroutineScope()
     var testing by remember { mutableStateOf(false) }
@@ -351,7 +375,15 @@ private fun NodeSheet(
             }
             IconButton({ onMove(-1) }, enabled = i > 0) { Icon(Icons.Outlined.KeyboardArrowUp, "Move up") }
             IconButton({ onMove(1) }, enabled = i < count - 1) { Icon(Icons.Outlined.KeyboardArrowDown, "Move down") }
+            IconButton(onDuplicate) { Icon(Icons.Outlined.ContentCopy, "Duplicate") }
             IconButton(onDelete) { Icon(Icons.Outlined.Delete, "Remove", tint = P.danger) }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Enabled", fontSize = 14.sp)
+                Text(if (s.disabled) "Skipped when the flow runs" else "Runs with the flow", fontSize = 12.sp, color = P.muted)
+            }
+            Switch(!s.disabled, { onChange(s.copy(disabled = !it)) })
         }
         if (issues.isNotEmpty()) {
             SectionLabel("Problems")
@@ -362,7 +394,10 @@ private fun NodeSheet(
                 onChange(s.copy(args = prettyJson.encodeToString(JsonObject.serializer(), JsonObject(o + absent.associateWith { JsonPrimitive("") }))))
             }) { Text("Add missing fields") }
         }
-        SectionLabel(if (res == null || testing) "Result" else if (res.ok) "Result ✓" else "Result ✗")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel("Result")
+            if (res != null && !testing) { Spacer(Modifier.width(6.dp)); OkIcon(res.ok, 14.dp) }
+        }
         when {
             testing -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp), color = P.accent)
             res != null -> {
@@ -402,12 +437,20 @@ private fun NodeSheet(
             label = { Text("…or image URL") }, singleLine = true, textStyle = TextStyle(fontSize = 13.sp),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
 
-        SectionLabel("Arguments")
-        OutlinedTextField(s.args, { onChange(s.copy(args = it)) }, Modifier.fillMaxWidth(),
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { SectionLabel("Arguments") }
+            TextButton({ picking = true }) {
+                Icon(Icons.Outlined.DataObject, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Insert value")
+            }
+        }
+        if (picking) FieldPicker(all, i, prior(), { picking = false }) { expr ->
+            argsTf = insertPlaceholder(argsTf, expr); onChange(s.copy(args = argsTf.text)); picking = false
+        }
+        OutlinedTextField(argsTf, { argsTf = it; if (it.text != s.args) onChange(s.copy(args = it.text)) }, Modifier.fillMaxWidth(),
             textStyle = TextStyle(fontFamily = Mono, fontSize = 12.sp), minLines = 4,
             colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = P.codeBg, focusedContainerColor = P.codeBg),
             isError = !valid, supportingText = if (valid) null else ({ Text("Invalid JSON object") }))
-        Text("Use earlier results: {{step1.path.to.field}}, {{prev.field}}, {{now}}, {{date}}. " +
+        Text("Tap Insert value to pick from earlier results, or type {{step1.path.to.field}}, {{prev.field}}, {{now}}, {{date}}. " +
             "Array items by index, e.g. {{step1.messages.0.id}}.", fontSize = 12.sp, color = P.muted)
     }
 }
@@ -440,7 +483,7 @@ private fun ScheduleEditor(s: Schedule, onChange: (Schedule) -> Unit) {
             }
         }
         when (s) {
-            Schedule.Manual -> Text("Runs only when you tap ▶.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Schedule.Manual -> Text("Runs only when you tap Run.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             is Schedule.Once -> {
                 val dt = LocalDateTime.ofInstant(Instant.ofEpochMilli(s.atMillis), ZoneId.systemDefault())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

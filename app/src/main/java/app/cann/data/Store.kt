@@ -46,6 +46,13 @@ class Store private constructor(private val file: File) {
 
     fun deleteTemplate(id: String) = edit { d -> d.copy(templates = d.templates.filterNot { it.id == id }) }
 
+    fun deleteRun(id: String) = edit { d -> d.copy(runs = d.runs.filterNot { it.id == id }) }
+
+    /** Clears every run, or only [workflowId]'s. */
+    fun clearRuns(workflowId: String? = null) = edit { d ->
+        d.copy(runs = if (workflowId == null) emptyList() else d.runs.filterNot { it.workflowId == workflowId })
+    }
+
     fun addRun(r: Run) = edit { d -> d.copy(runs = (listOf(r) + d.runs).take(MAX_RUNS)) }
 
     companion object {

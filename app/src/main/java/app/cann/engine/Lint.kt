@@ -28,6 +28,7 @@ object Lint {
                         n > steps.size -> out += Issue(true, "{{$expr}}: node $n doesn't exist")
                         n - 1 >= i -> out += Issue(true, "{{$expr}}: node $n runs ${if (n - 1 == i) "as this node" else "after this one"}",
                             "A node can only read results from nodes above it.")
+                        steps[n - 1].disabled -> out += Issue(false, "{{$expr}}: node $n is disabled", "It will be empty.")
                     }
                 }
                 else -> out += Issue(true, "Unknown placeholder {{$expr}}", "Use stepN, prev, now or date.")

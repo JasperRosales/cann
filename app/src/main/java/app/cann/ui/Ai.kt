@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -66,7 +67,7 @@ fun AiDialog(s: Settings, current: Workflow?, onDismiss: () -> Unit, onResult: (
                     log.takeLast(6).forEachIndexed { i, l ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (busy && i == log.takeLast(6).lastIndex) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
-                            else Text("✓", color = P.success, fontSize = 12.sp)
+                            else Icon(Icons.Outlined.CheckCircle, null, Modifier.size(12.dp), tint = P.success)
                             Spacer(Modifier.width(8.dp))
                             Text(l, fontSize = 12.sp, color = P.muted)
                         }

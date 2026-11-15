@@ -99,8 +99,8 @@ fun FlowsScreen(store: Store, db: Db, m: Modifier, onOpen: (String) -> Unit, nee
                         }
                     }
                     Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        w.nextRunAt?.let { StatusPill("Next ${fmtTime(it)}", P.accent) }
-                        last?.let { StatusPill((if (it.ok) "✓ " else "✗ ") + fmtTime(it.startedAt), if (it.ok) P.success else P.danger) }
+                        w.nextRunAt?.let { StatusPill("Next ${fmtTime(it)}", P.accent, Icons.Outlined.Schedule) }
+                        last?.let { StatusPill(fmtTime(it.startedAt), if (it.ok) P.success else P.danger, if (it.ok) Icons.Outlined.CheckCircle else Icons.Outlined.Cancel) }
                     }
                 }
             }
@@ -180,27 +180,52 @@ private fun TemplateCard(t: Template, m: Modifier = Modifier, onDelete: (() -> U
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RunsScreen(runs: List<Run>, m: Modifier) {
+fun RunsScreen(store: Store, all: List<Run>, m: Modifier) {
     var open by remember { mutableStateOf<String?>(null) }
+    var flow by remember { mutableStateOf<String?>(null) }
+    var failedOnly by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    val flows = all.distinctBy { it.workflowId }.map { it.workflowId to it.workflowName }
+    if (flow != null && flows.none { it.first == flow }) flow = null
+    val runs = all.filter { (flow == null || it.workflowId == flow) && (!failedOnly || !it.ok) }
     LazyColumn(m.fillMaxSize()) {
-        item { Header("Runs", "Latest ${runs.size}") }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { Header("Runs", "${runs.size} shown") }
+                if (all.isNotEmpty()) TextButton({ confirmClear = true }, Modifier.padding(end = 12.dp)) {
+                    Icon(Icons.Outlined.DeleteSweep, null, tint = P.danger); Spacer(Modifier.width(6.dp))
+                    Text(if (flow == null && !failedOnly) "Clear all" else "Clear shown", color = P.danger)
+                }
+            }
+        }
+        if (all.isNotEmpty()) item {
+            FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(failedOnly, { failedOnly = !failedOnly }, { Text("Failed only") })
+                flows.forEach { (id, n) -> FilterChip(flow == id, { flow = if (flow == id) null else id }, { Text(n) }) }
+            }
+        }
+        if (runs.isEmpty()) item {
+            Text("No runs yet.", color = P.muted, modifier = Modifier.padding(20.dp))
+        }
         items(runs, key = { it.id }) { r ->
             Column(Modifier.fillMaxWidth().clickable { open = if (open == r.id) null else r.id }.padding(20.dp, 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (r.ok) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline, null,
                         tint = if (r.ok) P.success else P.danger)
                     Spacer(Modifier.width(10.dp))
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text(r.workflowName)
                         Text("${fmtTime(r.startedAt)} · ${(r.endedAt - r.startedAt) / 1000.0}s", fontSize = 12.sp, color = P.muted)
                     }
+                    IconButton({ store.deleteRun(r.id) }) { Icon(Icons.Outlined.Delete, "Delete run", tint = P.muted) }
                 }
                 if (open == r.id) r.steps.forEachIndexed { i, s ->
                     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         StepIcon(Step(s.toolSlug), 24.dp); Spacer(Modifier.width(8.dp))
                         Text("${i + 1}. ${s.toolSlug}", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        Text(if (s.ok) "✓" else "✗", color = if (s.ok) P.success else P.danger)
+                        OkIcon(s.ok)
                     }
                     if (!s.ok) app.cann.engine.Lint.hint(s.output)?.let {
                         Text("Tip: $it", fontSize = 12.sp, color = P.warn, modifier = Modifier.padding(top = 4.dp))
@@ -213,6 +238,18 @@ fun RunsScreen(runs: List<Run>, m: Modifier) {
             HorizontalDivider(color = P.stroke)
         }
     }
+    if (confirmClear) AlertDialog(
+        onDismissRequest = { confirmClear = false },
+        title = { Text("Delete ${runs.size} run log(s)?") },
+        confirmButton = {
+            TextButton({
+                val ids = runs.map { it.id }.toSet()
+                store.edit { d -> d.copy(runs = d.runs.filterNot { it.id in ids }) }
+                confirmClear = false
+            }) { Text("Delete", color = P.danger) }
+        },
+        dismissButton = { TextButton({ confirmClear = false }) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -226,6 +263,7 @@ fun SettingsScreen(store: Store, s: Settings, m: Modifier) {
     var aiUrl by remember(s) { mutableStateOf(s.aiUrl) }
     var aiKey by remember(s) { mutableStateOf(s.aiKey) }
     var aiModel by remember(s) { mutableStateOf(s.aiModel) }
+    var custom by remember(s) { mutableStateOf(AI_PRESETS.none { it.url == s.aiUrl }) }
     val next = s.copy(apiKey = key.trim(), userId = user.trim().ifEmpty { "default" },
         aiUrl = aiUrl.trim(), aiKey = aiKey.trim(), aiModel = aiModel.trim())
     Column(m.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
@@ -242,8 +280,9 @@ fun SettingsScreen(store: Store, s: Settings, m: Modifier) {
         Hint("Describe a flow and AI builds the nodes. Pick a free provider, get a key, paste it below.")
         Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AI_PRESETS.forEach { p ->
-                FilterChip(aiUrl == p.url, { aiUrl = p.url; aiModel = p.model }, { Text(p.name) })
+                FilterChip(aiUrl == p.url && !custom, { custom = false; aiUrl = p.url; aiModel = p.model }, { Text(p.name) })
             }
+            FilterChip(custom, { custom = true }, { Text("Custom") })
         }
         AI_PRESETS.firstOrNull { it.url == aiUrl }?.let { p ->
             TextButton({ ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.keyUrl))) }) {
@@ -255,9 +294,11 @@ fun SettingsScreen(store: Store, s: Settings, m: Modifier) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(aiModel, { aiModel = it }, Modifier.fillMaxWidth(), label = { Text("Model") }, singleLine = true)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(aiUrl, { aiUrl = it }, Modifier.fillMaxWidth(), label = { Text("Endpoint (OpenAI-compatible)") },
-            singleLine = true)
+        if (custom) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(aiUrl, { aiUrl = it }, Modifier.fillMaxWidth(), label = { Text("Endpoint (OpenAI-compatible)") },
+                singleLine = true)
+        }
         Spacer(Modifier.height(16.dp))
         Button({ store.edit { it.copy(settings = next) } }, enabled = next != s) { Text("Save") }
     }

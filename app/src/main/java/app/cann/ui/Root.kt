@@ -58,7 +58,7 @@ fun CannRoot() {
         val m = Modifier.padding(pad)
         when (tab) {
             Tab.Flows -> FlowsScreen(store, db, m, onOpen = { editing = it }, needsKey = db.settings.apiKey.isBlank(), goSettings = { tab = Tab.Settings })
-            Tab.Runs -> RunsScreen(db.runs, m)
+            Tab.Runs -> RunsScreen(store, db.runs, m)
             Tab.Apps -> AppsScreen(db.settings, m)
             Tab.Settings -> SettingsScreen(store, db.settings, m)
         }

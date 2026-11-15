@@ -30,6 +30,11 @@ object Runner {
         val results = mutableListOf<StepResult>()
         val now = ZonedDateTime.now()
         for (st in wf.steps) {
+            if (st.disabled) {
+                outputs += JsonNull
+                results += StepResult(st.toolSlug, true, "Skipped (node disabled)")
+                continue
+            }
             val (res, data) = step(api, st, outputs, now)
             outputs += data
             results += res

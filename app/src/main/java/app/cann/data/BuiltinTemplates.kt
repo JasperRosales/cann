@@ -21,7 +21,7 @@ object BuiltinTemplates {
             step("SLACK_SEND_MESSAGE", "slack", "Post count", """
                 {
                   "channel": "general",
-                  "markdown_text": "📬 {{step1.data.resultSizeEstimate}} unread emails ({{date}})"
+                  "markdown_text": "{{step1.data.resultSizeEstimate}} unread emails ({{date}})"
                 }""")),
         tpl("agenda-mail", "Today's agenda by email", "Email yourself today's calendar events.",
             Schedule.Daily(7, 0, weekdays),
@@ -68,7 +68,7 @@ object BuiltinTemplates {
             step("SLACK_SEND_MESSAGE", "slack", "Remind", """
                 {
                   "channel": "general",
-                  "markdown_text": "⏰ Standup in 5 minutes!"
+                  "markdown_text": "Standup in 5 minutes!"
                 }""")),
     )
 }

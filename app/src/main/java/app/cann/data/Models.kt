@@ -20,6 +20,8 @@ data class Step(
     val toolkit: String = "", val icon: String? = null, val logo: String? = null,
     /** Required argument names, captured from the tool schema when the node is added. */
     val required: List<String> = emptyList(),
+    /** Skipped when the flow runs. */
+    val disabled: Boolean = false,
 ) {
     val app: String get() = toolkit.ifBlank { toolSlug.substringBefore('_').lowercase() }
 }

@@ -163,7 +163,7 @@ If editing an existing flow, return the whole updated flow.
             put("type", "function")
             putJsonObject("function") {
                 put("name", name); put("description", desc)
-                putJsonObject("parameters") {
+                if (props.isNotEmpty()) putJsonObject("parameters") {
                     put("type", "object"); put("properties", props)
                     putJsonArray("required") { req.forEach { add(it) } }
                 }
@@ -199,7 +199,7 @@ If editing an existing flow, return the whole updated flow.
                         putJsonObject("properties") {
                             put("tool", str("Composio tool slug"))
                             put("note", str("Short label"))
-                            putJsonObject("args") { put("type", "object"); put("description", "Tool arguments") }
+                            put("args", str("Tool arguments as a JSON object string, e.g. {\"channel\": \"general\"}"))
                         }
                         putJsonArray("required") { add("tool"); add("args") }
                     }

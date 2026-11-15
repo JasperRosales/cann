@@ -207,9 +207,18 @@ fun SectionLabel(t: String) = Text(t.uppercase(), color = P.muted, fontSize = 11
     letterSpacing = 1.sp, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
 
 @Composable
-fun StatusPill(t: String, c: androidx.compose.ui.graphics.Color) = Text(t, color = c, fontSize = 11.sp,
-    fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(RoundedCornerShape(50))
-        .background(c.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 4.dp))
+fun StatusPill(t: String, c: androidx.compose.ui.graphics.Color, icon: androidx.compose.ui.graphics.vector.ImageVector? = null) =
+    Row(Modifier.clip(RoundedCornerShape(50)).background(c.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        icon?.let { Icon(it, null, Modifier.size(13.dp), tint = c); Spacer(Modifier.width(4.dp)) }
+        Text(t, color = c, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    }
+
+/** Green check or red cross for a pass/fail result. */
+@Composable
+fun OkIcon(ok: Boolean, size: androidx.compose.ui.unit.Dp = 18.dp) = Icon(
+    if (ok) Icons.Outlined.CheckCircle else Icons.Outlined.Cancel, if (ok) "Passed" else "Failed",
+    Modifier.size(size), tint = if (ok) P.success else P.danger)
 
 enum class AppFilter(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val empty: String) {
     All("All", Icons.Outlined.Apps, "Nothing found."),
