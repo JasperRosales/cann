@@ -21,8 +21,8 @@ android {
         applicationId = "app.cann"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
     signingConfigs {
         if (keystoreProps.isNotEmpty()) create("release") {
@@ -62,5 +62,6 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.work.runtime)
     implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
     testImplementation(libs.junit)
 }

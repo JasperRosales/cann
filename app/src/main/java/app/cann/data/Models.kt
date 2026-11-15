@@ -65,4 +65,15 @@ data class Db(
     val settings: Settings = Settings(),
     val workflows: List<Workflow> = emptyList(),
     val runs: List<Run> = emptyList(),
+    /** Starred toolkit slugs. */
+    val favApps: Set<String> = emptySet(),
+    /** User-made workflow templates. */
+    val templates: List<Template> = emptyList(),
+)
+
+/** A reusable starting point for a workflow. [flow] ids are replaced on use. */
+@Serializable
+data class Template(
+    val id: String, val name: String, val description: String = "",
+    val flow: Workflow, val builtIn: Boolean = false,
 )

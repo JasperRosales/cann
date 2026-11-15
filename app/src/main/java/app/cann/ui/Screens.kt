@@ -50,8 +50,9 @@ fun Header(title: String, sub: String? = null) {
 }
 
 @Composable
-fun FlowsScreen(db: Db, m: Modifier, onOpen: (String) -> Unit, needsKey: Boolean, goSettings: () -> Unit) {
+fun FlowsScreen(store: Store, db: Db, m: Modifier, onOpen: (String) -> Unit, needsKey: Boolean, goSettings: () -> Unit) {
     val ctx = LocalContext.current
+    var picking by remember { mutableStateOf(false) }
     Box(m.fillMaxSize()) {
         LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
             item { Header("cann", "${db.workflows.size} workflow(s)") }
@@ -63,6 +64,10 @@ fun FlowsScreen(db: Db, m: Modifier, onOpen: (String) -> Unit, needsKey: Boolean
                         Text("Add your Composio API key in Settings to start.")
                     }
                 }
+            }
+            if (db.workflows.isEmpty()) {
+                item { Text("Start from a template", color = P.muted, fontSize = 13.sp, modifier = Modifier.padding(20.dp, 8.dp)) }
+                items(BuiltinTemplates.all, key = { it.id }) { t -> TemplateCard(t, Modifier.padding(16.dp, 4.dp)) { onOpen("tpl:" + t.id) } }
             }
             items(db.workflows, key = { it.id }) { w ->
                 val last = db.runs.firstOrNull { it.workflowId == w.id }
@@ -98,9 +103,67 @@ fun FlowsScreen(db: Db, m: Modifier, onOpen: (String) -> Unit, needsKey: Boolean
                 }
             }
         }
-        ExtendedFloatingActionButton(onClick = { onOpen("") }, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+        ExtendedFloatingActionButton(onClick = { picking = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
             containerColor = P.accent, contentColor = P.onAccent,
             icon = { Icon(Icons.Outlined.Add, null) }, text = { Text("New flow") })
+    }
+    if (picking) TemplateSheet(store, db.templates, onDismiss = { picking = false }) { picking = false; onOpen(it) }
+}
+
+/** New-flow chooser: blank, built-in templates, and the user's own. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TemplateSheet(store: Store, mine: List<Template>, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    ModalBottomSheet(onDismiss, containerColor = P.surfaceLo) {
+        LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 32.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { Text("New flow", style = MaterialTheme.typography.titleLarge) }
+            item {
+                val shape = RoundedCornerShape(16.dp)
+                Row(Modifier.fillMaxWidth().clip(shape).border(1.dp, P.stroke, shape).clickable { onPick("") }.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    IconTile("mi:bolt", "Blank", 40.dp); Spacer(Modifier.width(12.dp))
+                    Text("Blank flow", fontWeight = FontWeight.Medium)
+                }
+            }
+            if (mine.isNotEmpty()) {
+                item { SectionLabel("My templates") }
+                items(mine, key = { it.id }) { t ->
+                    TemplateCard(t, onDelete = { store.deleteTemplate(t.id) }) { onPick("tpl:" + t.id) }
+                }
+            }
+            item { SectionLabel("Templates") }
+            items(BuiltinTemplates.all, key = { it.id }) { t -> TemplateCard(t) { onPick("tpl:" + t.id) } }
+            item {
+                Text("Tip: open any flow and tap the bookmark to save it as a template.", fontSize = 12.sp,
+                    color = P.muted, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TemplateCard(t: Template, m: Modifier = Modifier, onDelete: (() -> Unit)? = null, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(m.fillMaxWidth().clip(shape).background(P.surfaceLo).border(1.dp, P.stroke, shape).clickable(onClick = onClick)
+        .padding(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(t.name, fontWeight = FontWeight.Medium)
+                Text(t.description.ifBlank { t.flow.schedule.label() }, fontSize = 12.sp, color = P.muted,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            onDelete?.let { IconButton(it) { Icon(Icons.Outlined.Delete, "Delete template", tint = P.muted) } }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            t.flow.steps.take(6).forEachIndexed { i, st ->
+                if (i > 0) Box(Modifier.width(10.dp).height(2.dp).background(P.muted))
+                StepIcon(st, 28.dp)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(t.flow.schedule.label(), fontSize = 11.sp, color = P.muted)
+        }
     }
 }
 

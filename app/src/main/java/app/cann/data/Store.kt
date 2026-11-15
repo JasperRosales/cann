@@ -38,6 +38,14 @@ class Store private constructor(private val file: File) {
         d.copy(workflows = d.workflows.filterNot { it.id == id }, runs = d.runs.filterNot { it.workflowId == id })
     }
 
+    fun toggleFav(slug: String) = edit { d ->
+        d.copy(favApps = if (slug in d.favApps) d.favApps - slug else d.favApps + slug)
+    }
+
+    fun saveTemplate(t: Template) = edit { d -> d.copy(templates = d.templates.filterNot { it.id == t.id } + t) }
+
+    fun deleteTemplate(id: String) = edit { d -> d.copy(templates = d.templates.filterNot { it.id == id }) }
+
     fun addRun(r: Run) = edit { d -> d.copy(runs = (listOf(r) + d.runs).take(MAX_RUNS)) }
 
     companion object {

@@ -59,10 +59,12 @@ fun Modifier.dotGrid(color: Color) = drawBehind {
 }
 
 @Composable
-fun EditorScreen(store: Store, id: String?, onClose: () -> Unit) {
+fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val db by store.db.collectAsState()
-    val orig = remember { id?.let(store::workflow) ?: Workflow(UUID.randomUUID().toString(), "") }
+    val orig = remember {
+        id?.let(store::workflow) ?: (seed ?: Workflow("", "")).copy(id = UUID.randomUUID().toString(), nextRunAt = null)
+    }
     var name by remember { mutableStateOf(orig.name) }
     var schedule by remember { mutableStateOf(orig.schedule) }
     val steps = remember { orig.steps.toMutableStateList() }
@@ -71,6 +73,7 @@ fun EditorScreen(store: Store, id: String?, onClose: () -> Unit) {
     var openStep by remember { mutableStateOf<Int?>(null) }
     var openTrigger by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var saveTpl by remember { mutableStateOf(false) }
     val lastRun = db.runs.firstOrNull { it.workflowId == orig.id }
 
     val badArgs = steps.indexOfFirst { !validArgs(it.args) }
@@ -91,6 +94,7 @@ fun EditorScreen(store: Store, id: String?, onClose: () -> Unit) {
             },
             navigationIcon = { IconButton(onClose) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } },
             actions = {
+                IconButton({ saveTpl = true }, enabled = steps.isNotEmpty()) { Icon(Icons.Outlined.BookmarkAdd, "Save as template") }
                 if (id != null) IconButton({ confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete") }
                 if (id != null) IconButton({ Scheduler.sync(ctx, build()); Scheduler.runNow(ctx, orig.id) },
                     enabled = badArgs < 0 && steps.isNotEmpty()) { Icon(Icons.Outlined.PlayArrow, "Save & run", tint = P.success) }
@@ -114,6 +118,13 @@ fun EditorScreen(store: Store, id: String?, onClose: () -> Unit) {
             Spacer(Modifier.height(20.dp))
             Text("Tap a node to edit · + between nodes to insert", fontSize = 12.sp, color = P.muted)
         }
+    }
+
+    if (saveTpl) TemplateDialog(name, onDismiss = { saveTpl = false }) { n, d ->
+        store.saveTemplate(Template(UUID.randomUUID().toString(), n, d,
+            build().copy(id = "", name = n, enabled = true, nextRunAt = null)))
+        saveTpl = false
+        android.widget.Toast.makeText(ctx, "Saved template “$n”", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     pickAt?.let { at ->
@@ -268,7 +279,7 @@ private fun NodeSheet(i: Int, s: Step, count: Int, onChange: (Step) -> Unit, onD
 
         SectionLabel("Icon")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { IconChoice(s.icon == null, { onChange(s.copy(icon = null)) }) { IconTile(null, s.app, 40.dp, fallbackUrl = s.logo ?: logoUrl(s.app)) } }
+            item { IconChoice(s.icon == null, { onChange(s.copy(icon = null)) }) { IconTile(null, s.app, 40.dp, fallbackUrl = s.logo ?: logoUrl(s.app), slug = s.app) } }
             items(Glyphs.keys.toList()) { k ->
                 IconChoice(s.icon == "mi:$k", { onChange(s.copy(icon = "mi:$k")) }) { IconTile("mi:$k", k, 40.dp) }
             }
@@ -382,3 +393,18 @@ private fun TimeDialog(h: Int, m: Int, onDismiss: () -> Unit, onPick: (Int, Int)
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } }, text = { TimePicker(st) })
 }
 
+
+@Composable
+private fun TemplateDialog(initial: String, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    var n by remember { mutableStateOf(initial) }
+    var d by remember { mutableStateOf("") }
+    AlertDialog(onDismiss, title = { Text("Save as template") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(n, { n = it }, label = { Text("Name") }, singleLine = true)
+                OutlinedTextField(d, { d = it }, label = { Text("Description (optional)") })
+            }
+        },
+        confirmButton = { Button({ onSave(n.trim(), d.trim()) }, enabled = n.isNotBlank()) { Text("Save") } },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel") } })
+}
