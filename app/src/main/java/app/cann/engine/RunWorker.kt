@@ -31,7 +31,7 @@ class RunWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, p
             if (after.schedule is Schedule.Once) Scheduler.sync(applicationContext, after.copy(enabled = false), Scheduler.Mode.CHAIN)
             else Scheduler.sync(applicationContext, after, Scheduler.Mode.CHAIN)
         }
-        notify(applicationContext, wf.name, if (run.ok) "Done: ${run.steps.size} step(s)" else "Failed: " + (run.steps.lastOrNull()?.output?.take(120) ?: "no steps"))
+        notify(applicationContext, wf.name, if (run.ok) "Done: ${run.steps.size} step(s)" else "Node ${run.steps.size} failed: " + (run.steps.lastOrNull()?.output?.let { Lint.hint(it) ?: it.take(120) } ?: "no steps"))
         return Result.success()
     }
 

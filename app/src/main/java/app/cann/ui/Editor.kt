@@ -39,7 +39,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.cann.data.*
+import app.cann.engine.Issue
+import app.cann.engine.Lint
+import app.cann.engine.Runner
 import app.cann.engine.Scheduler
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 import java.time.*
 import java.util.UUID
@@ -75,6 +79,18 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () 
     var confirmDelete by remember { mutableStateOf(false) }
     var saveTpl by remember { mutableStateOf(false) }
     val lastRun = db.runs.firstOrNull { it.workflowId == orig.id }
+    // Results from "Test node" this session, by node index; cleared when nodes move.
+    val tests = remember { mutableStateMapOf<Int, StepResult>() }
+    val testData = remember { mutableStateMapOf<Int, JsonElement>() }
+    fun resetTests() { tests.clear(); testData.clear() }
+    val issues = steps.indices.map { Lint.check(steps, it) }
+    fun resultOf(i: Int) = tests[i] ?: lastRun?.steps?.getOrNull(i)?.takeIf { it.toolSlug == steps[i].toolSlug }
+    // A node is "skipped" if the last run stopped before reaching it.
+    fun skipped(i: Int) = tests[i] == null && lastRun != null && !lastRun.ok && i >= lastRun.steps.size
+    fun priorOutputs(i: Int): List<JsonElement> = (0 until i).map { j ->
+        testData[j] ?: lastRun?.steps?.getOrNull(j)?.takeIf { it.ok }
+            ?.let { runCatching { json.parseToJsonElement(it.output) }.getOrNull() } ?: JsonNull
+    }
 
     val badArgs = steps.indexOfFirst { !validArgs(it.args) }
     fun build() = orig.copy(name = name.trim().ifEmpty { "Untitled flow" }, schedule = schedule, steps = steps.toList(),
@@ -107,11 +123,18 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () 
                 .padding(vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            ProblemsBanner(steps.indices.mapNotNull { i ->
+                val fail = resultOf(i)?.takeIf { !it.ok }
+                when {
+                    issues[i].isNotEmpty() -> Triple(i, issues[i].any { it.error }, issues[i].first().message)
+                    fail != null -> Triple(i, true, "Failed: " + (Lint.hint(fail.output) ?: fail.output.take(80)))
+                    else -> null
+                }
+            }) { openStep = it }
             TriggerNode(schedule) { openTrigger = true }
             steps.forEachIndexed { i, s ->
-                Connector { pickAt = i }
-                val res = lastRun?.steps?.getOrNull(i)?.takeIf { it.toolSlug == s.toolSlug }
-                StepNode(i, s, validArgs(s.args), res?.ok) { openStep = i }
+                Connector { pickAt = i; resetTests() }
+                StepNode(i, s, issues[i], resultOf(i), skipped(i)) { openStep = i }
             }
             Connector(null)
             AddNode { pickAt = steps.size }
@@ -143,7 +166,8 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () 
                         }
                     }
                     steps.add(at.coerceIn(0, steps.size), Step(t.slug, prettyJson.encodeToString(JsonObject.serializer(), args),
-                        t.name, t.version, toolkit = t.toolkit, logo = kit?.logo))
+                        t.name, t.version, toolkit = t.toolkit, logo = kit?.logo,
+                        required = t.params.filter { it.required }.map { it.name }))
                     pickAt = null
                     openStep = at
                 }
@@ -153,9 +177,11 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () 
     openStep?.takeIf { it in steps.indices }?.let { i ->
         ModalBottomSheet({ openStep = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = P.surfaceLo) {
-            NodeSheet(i, steps[i], steps.size, onChange = { steps[i] = it },
-                onDelete = { steps.removeAt(i); openStep = null },
-                onMove = { d -> val t = i + d; if (t in steps.indices) { steps.add(t, steps.removeAt(i)); openStep = t } })
+            NodeSheet(i, steps[i], steps.size, issues[i], resultOf(i), skipped(i), db.settings, { priorOutputs(i) },
+                onTested = { r, d -> tests[i] = r; testData[i] = d },
+                onChange = { steps[i] = it },
+                onDelete = { steps.removeAt(i); resetTests(); openStep = null },
+                onMove = { d -> val t = i + d; if (t in steps.indices) { steps.add(t, steps.removeAt(i)); resetTests(); openStep = t } })
         }
     }
     if (openTrigger) ModalBottomSheet({ openTrigger = false }, containerColor = P.surfaceLo) {
@@ -202,24 +228,59 @@ private fun TriggerNode(s: Schedule, onClick: () -> Unit) {
 }
 
 @Composable
-private fun StepNode(i: Int, s: Step, valid: Boolean, ok: Boolean?, onClick: () -> Unit) {
+private fun StepNode(i: Int, s: Step, issues: List<Issue>, res: StepResult?, skipped: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
-    val border = when { !valid -> P.danger; ok == false -> P.danger; ok == true -> P.success; else -> P.stroke }
+    val hasErr = issues.any { it.error } || res?.ok == false
+    val hasWarn = issues.isNotEmpty()
+    val border = when { hasErr -> P.danger; hasWarn -> P.warn; res?.ok == true -> P.success; else -> P.stroke }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box {
-            Box(Modifier.size(NodeSize).clip(shape).background(P.surfaceHi).border(2.dp, border, shape).clickable(onClick = onClick),
+            Box(Modifier.size(NodeSize).clip(shape).background(P.surfaceHi).border(2.dp, border, shape).clickable(onClick = onClick)
+                .then(if (skipped) Modifier.background(P.bgDeep.copy(alpha = 0.5f)) else Modifier),
                 contentAlignment = Alignment.Center) {
                 StepIcon(s, 48.dp)
             }
             Text("${i + 1}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = P.onAccent,
                 modifier = Modifier.align(Alignment.TopStart).offset((-6).dp, (-6).dp).clip(CircleShape)
                     .background(P.accent).padding(horizontal = 6.dp, vertical = 1.dp))
-            if (ok != null) Icon(if (ok) Icons.Outlined.CheckCircle else Icons.Outlined.Error, null,
-                tint = if (ok) P.success else P.danger,
-                modifier = Modifier.align(Alignment.TopEnd).offset(6.dp, (-6).dp).size(18.dp).clip(CircleShape).background(P.bgDeep))
+            val badge = when { hasErr -> Icons.Outlined.Error to P.danger; hasWarn -> Icons.Outlined.Warning to P.warn
+                res?.ok == true -> Icons.Outlined.CheckCircle to P.success; else -> null }
+            badge?.let { (ic, c) -> Icon(ic, null, tint = c,
+                modifier = Modifier.align(Alignment.TopEnd).offset(6.dp, (-6).dp).size(18.dp).clip(CircleShape).background(P.bgDeep)) }
         }
         NodeLabel(s.note.ifBlank { s.toolSlug }, s.toolSlug)
-        if (!valid) Text("Invalid JSON", color = P.danger, fontSize = 11.sp)
+        val msg = issues.firstOrNull()?.let { it.message to (if (it.error) P.danger else P.warn) }
+            ?: res?.takeIf { !it.ok }?.let { "Failed · " + (Lint.hint(it.output) ?: it.output) to P.danger }
+            ?: if (skipped) "Not reached last run" to P.muted else null
+        msg?.let { (t, c) ->
+            Text(t + if (issues.size > 1) "  (+${issues.size - 1})" else "", color = c, fontSize = 11.sp, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 240.dp).clickable(onClick = onClick))
+        }
+    }
+}
+
+/** Summary of every node with a problem; tap a row to open that node. */
+@Composable
+private fun ProblemsBanner(rows: List<Triple<Int, Boolean, String>>, onOpen: (Int) -> Unit) {
+    if (rows.isEmpty()) return
+    val shape = RoundedCornerShape(14.dp)
+    val c = if (rows.any { it.second }) P.danger else P.warn
+    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 20.dp).fillMaxWidth().clip(shape)
+        .background(P.surfaceHi).border(1.dp, c.copy(alpha = 0.6f), shape).padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.ReportProblem, null, tint = c, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("${rows.size} node${if (rows.size > 1) "s need" else " needs"} attention", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        }
+        rows.forEach { (i, err, m) ->
+            Row(Modifier.fillMaxWidth().clickable { onOpen(i) }.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${i + 1}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = P.onAccent,
+                    modifier = Modifier.clip(CircleShape).background(if (err) P.danger else P.warn).padding(horizontal = 6.dp, vertical = 1.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(m, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Icon(Icons.Outlined.ChevronRight, "Open", tint = P.muted, modifier = Modifier.size(18.dp))
+            }
+        }
     }
 }
 
@@ -260,8 +321,14 @@ private fun AddNode(onClick: () -> Unit) {
 }
 
 @Composable
-private fun NodeSheet(i: Int, s: Step, count: Int, onChange: (Step) -> Unit, onDelete: () -> Unit, onMove: (Int) -> Unit) {
+private fun NodeSheet(
+    i: Int, s: Step, count: Int, issues: List<Issue>, res: StepResult?, skipped: Boolean,
+    settings: Settings, prior: () -> List<JsonElement>, onTested: (StepResult, JsonElement) -> Unit,
+    onChange: (Step) -> Unit, onDelete: () -> Unit, onMove: (Int) -> Unit,
+) {
     val valid = remember(s.args) { validArgs(s.args) }
+    val scope = rememberCoroutineScope()
+    var testing by remember { mutableStateOf(false) }
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepIcon(s, 44.dp)
@@ -274,6 +341,40 @@ private fun NodeSheet(i: Int, s: Step, count: Int, onChange: (Step) -> Unit, onD
             IconButton({ onMove(1) }, enabled = i < count - 1) { Icon(Icons.Outlined.KeyboardArrowDown, "Move down") }
             IconButton(onDelete) { Icon(Icons.Outlined.Delete, "Remove", tint = P.danger) }
         }
+        if (issues.isNotEmpty()) {
+            SectionLabel("Problems")
+            issues.forEach { IssueRow(it) }
+            val absent = s.required.filter { p -> runCatching { json.parseToJsonElement(s.args).jsonObject[p] == null }.getOrDefault(false) }
+            if (absent.isNotEmpty()) TextButton({
+                val o = json.parseToJsonElement(s.args).jsonObject
+                onChange(s.copy(args = prettyJson.encodeToString(JsonObject.serializer(), JsonObject(o + absent.associateWith { JsonPrimitive("") }))))
+            }) { Text("Add missing fields") }
+        }
+        SectionLabel(if (res == null || testing) "Result" else if (res.ok) "Result ✓" else "Result ✗")
+        when {
+            testing -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp), color = P.accent)
+            res != null -> {
+                if (!res.ok) Lint.hint(res.output)?.let { IssueRow(Issue(true, it)) }
+                if (res.unresolved.isNotEmpty()) IssueRow(Issue(false, "Empty placeholders: " + res.unresolved.joinToString { "{{$it}}" },
+                    "An earlier node didn't return that field. Test the earlier node and check its output."))
+                Text(res.output.take(3000), fontFamily = Mono, fontSize = 11.sp, color = if (res.ok) P.muted else P.danger,
+                    modifier = Modifier.padding(top = 4.dp).fillMaxWidth().heightIn(max = 220.dp).clip(RoundedCornerShape(8.dp))
+                        .background(P.codeBg).verticalScroll(rememberScrollState()).padding(8.dp))
+            }
+            skipped -> Text("Not reached last run: an earlier node failed.", fontSize = 12.sp, color = P.muted)
+            else -> Text("Not run yet.", fontSize = 12.sp, color = P.muted)
+        }
+        OutlinedButton({
+            testing = true
+            scope.launch {
+                val (r, d) = Runner.step(Composio(settings.apiKey, settings.userId), s, prior())
+                onTested(r, d); testing = false
+            }
+        }, enabled = !testing && valid && issues.none { it.error }, modifier = Modifier.padding(top = 6.dp)) {
+            Icon(Icons.Outlined.Science, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Test node")
+        }
+        Text("Runs only this node for real, using earlier nodes' last results.", fontSize = 11.sp, color = P.muted)
+
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(s.note, { onChange(s.copy(note = it)) }, Modifier.fillMaxWidth(), label = { Text("Label") }, singleLine = true)
 
@@ -407,4 +508,17 @@ private fun TemplateDialog(initial: String, onDismiss: () -> Unit, onSave: (Stri
         },
         confirmButton = { Button({ onSave(n.trim(), d.trim()) }, enabled = n.isNotBlank()) { Text("Save") } },
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } })
+}
+
+@Composable
+private fun IssueRow(it: Issue) {
+    val c = if (it.error) P.danger else P.warn
+    Row(Modifier.padding(vertical = 4.dp)) {
+        Icon(if (it.error) Icons.Outlined.Error else Icons.Outlined.Warning, null, tint = c, modifier = Modifier.size(16.dp).padding(top = 1.dp))
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(it.message, fontSize = 13.sp, color = c)
+            it.hint?.let { h -> Text(h, fontSize = 12.sp, color = P.muted) }
+        }
+    }
 }

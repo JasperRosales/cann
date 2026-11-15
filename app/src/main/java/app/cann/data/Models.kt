@@ -14,6 +14,8 @@ data class Settings(val apiKey: String = "", val userId: String = "default")
 data class Step(
     val toolSlug: String, val args: String = "{}", val note: String = "", val version: String? = null,
     val toolkit: String = "", val icon: String? = null, val logo: String? = null,
+    /** Required argument names, captured from the tool schema when the node is added. */
+    val required: List<String> = emptyList(),
 ) {
     val app: String get() = toolkit.ifBlank { toolSlug.substringBefore('_').lowercase() }
 }
@@ -47,7 +49,11 @@ data class Workflow(
 )
 
 @Serializable
-data class StepResult(val toolSlug: String, val ok: Boolean, val output: String)
+data class StepResult(
+    val toolSlug: String, val ok: Boolean, val output: String,
+    /** Placeholders that resolved to nothing, a common cause of failures. */
+    val unresolved: List<String> = emptyList(),
+)
 
 @Serializable
 data class Run(

@@ -29,6 +29,17 @@ object Templates {
         }
     }
 
+    /** Every placeholder expression used anywhere in [e]. */
+    fun refs(e: JsonElement): List<String> = when (e) {
+        is JsonObject -> e.values.flatMap(::refs)
+        is JsonArray -> e.flatMap(::refs)
+        is JsonPrimitive -> if (e.isString) re.findAll(e.content).map { it.groupValues[1] }.toList() else emptyList()
+    }
+
+    /** Placeholders in [e] that resolve to nothing given [outputs]. */
+    fun unresolved(e: JsonElement, outputs: List<JsonElement>, now: java.time.ZonedDateTime) =
+        refs(e).distinct().filter { resolve(it, outputs, now).let { v -> v == null || v is JsonNull } }
+
     fun resolve(expr: String, outputs: List<JsonElement>, now: java.time.ZonedDateTime): JsonElement? {
         if (expr == "now") return JsonPrimitive(now.toOffsetDateTime().toString())
         if (expr == "date") return JsonPrimitive(now.toLocalDate().toString())

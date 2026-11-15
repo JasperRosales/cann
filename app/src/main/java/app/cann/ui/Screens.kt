@@ -189,6 +189,9 @@ fun RunsScreen(runs: List<Run>, m: Modifier) {
                         Text("${i + 1}. ${s.toolSlug}", fontSize = 13.sp, modifier = Modifier.weight(1f))
                         Text(if (s.ok) "✓" else "✗", color = if (s.ok) P.success else P.danger)
                     }
+                    if (!s.ok) app.cann.engine.Lint.hint(s.output)?.let {
+                        Text("Tip: $it", fontSize = 12.sp, color = P.warn, modifier = Modifier.padding(top = 4.dp))
+                    }
                     Text(s.output.take(1500), fontFamily = Mono, fontSize = 11.sp, color = P.muted,
                         modifier = Modifier.padding(top = 4.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp))
                             .background(P.codeBg).padding(8.dp))

@@ -36,4 +36,17 @@ class EngineTest {
         assertEquals(false, app.cann.data.Updater.isNewer("0.2.0", "0.2.0"))
         assertEquals(false, app.cann.data.Updater.isNewer("0.1.9", "0.2"))
     }
+
+    @Test fun lint() {
+        val a = app.cann.data.Step("A_X", """{"q":"{{prev.id}}"}""", required = listOf("to"))
+        val b = app.cann.data.Step("B_Y", """{"q":"{{step2.id}} {{foo}}"}""")
+        val c = app.cann.data.Step("C_Z", "{bad")
+        val steps = listOf(a, b, c)
+        val la = app.cann.engine.Lint.check(steps, 0)
+        assertEquals(2, la.size); assertEquals(true, la[0].error); assertEquals(false, la[1].error)
+        assertEquals(2, app.cann.engine.Lint.check(steps, 1).size)
+        assertEquals(true, app.cann.engine.Lint.check(steps, 2).single().error)
+        assertEquals(listOf("step1.nope"), Templates.unresolved(Json.parseToJsonElement("""{"x":"{{step1.nope}} {{date}}"}"""),
+            listOf(Json.parseToJsonElement("{}")), now))
+    }
 }
