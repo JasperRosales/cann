@@ -148,7 +148,7 @@ fun SettingsScreen(store: Store, s: Settings, m: Modifier) {
         OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text("Composio API key") },
             singleLine = true, visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
-        Text("Project key (ak_…) from dashboard.composio.dev → Settings → API keys.", fontSize = 12.sp,
+        Text("Project key (ak_…) or MCP consumer key (ck_…) from dashboard.composio.dev.", fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), label = { Text("User ID") }, singleLine = true)

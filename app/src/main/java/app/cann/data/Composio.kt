@@ -22,6 +22,8 @@ data class ExecResult(val ok: Boolean, val data: JsonElement, val error: String?
 /** Minimal Composio v3 REST client. */
 class Composio(private val apiKey: String, private val userId: String) {
     private val base = "https://backend.composio.dev/api/v3"
+    /** Consumer keys (ck_) only work over MCP. */
+    private val mcp = apiKey.trim().takeIf { it.startsWith("ck_") }?.let(::ComposioMcp)
 
     private suspend fun call(method: String, path: String, body: JsonElement? = null): JsonObject =
         withContext(Dispatchers.IO) {
@@ -53,6 +55,7 @@ class Composio(private val apiKey: String, private val userId: String) {
     suspend fun toolkits(search: String = ""): List<Toolkit> = toolkitPage(search).items
 
     suspend fun toolkitPage(search: String = "", cursor: String? = null): Page<Toolkit> {
+        mcp?.let { return Page(if (cursor == null) it.toolkits(search) else emptyList(), null) }
         val r = call("GET", "/toolkits?limit=60" + (if (search.isNotBlank()) "&search=${q(search)}" else "") +
             (cursor?.let { "&cursor=${q(it)}" } ?: ""))
         return Page(r.items().map {
@@ -64,6 +67,7 @@ class Composio(private val apiKey: String, private val userId: String) {
     suspend fun tools(toolkit: String?, search: String = ""): List<Tool> = toolPage(toolkit, search).items
 
     suspend fun toolPage(toolkit: String?, search: String = "", cursor: String? = null): Page<Tool> {
+        mcp?.let { return Page(if (cursor == null) it.tools(toolkit, search) else emptyList(), null) }
         val p = buildString {
             append("/tools?limit=60")
             if (!toolkit.isNullOrBlank()) append("&toolkit_slug=${q(toolkit)}")
@@ -74,7 +78,7 @@ class Composio(private val apiKey: String, private val userId: String) {
         return Page(r.items().map(::parseTool), r.str("next_cursor"))
     }
 
-    suspend fun tool(slug: String): Tool = parseTool(call("GET", "/tools/${q(slug)}"))
+    suspend fun tool(slug: String): Tool = mcp?.tool(slug) ?: parseTool(call("GET", "/tools/${q(slug)}"))
 
     private fun parseTool(o: JsonObject): Tool {
         val ip = o.obj("input_parameters")
@@ -89,13 +93,13 @@ class Composio(private val apiKey: String, private val userId: String) {
         )
     }
 
-    suspend fun accounts(): List<Account> =
-        call("GET", "/connected_accounts?limit=100&user_ids=${q(userId)}").items().map {
+    suspend fun accounts(): List<Account> = mcp?.accounts() ?: call("GET", "/connected_accounts?limit=100&user_ids=${q(userId)}").items().map {
             Account(it.str("id").orEmpty(), it.obj("toolkit")?.str("slug").orEmpty(), it.str("status").orEmpty())
         }
 
     /** Returns a URL the user opens to authorize [toolkit] using Composio-managed auth. */
     suspend fun connectLink(toolkit: String): String {
+        mcp?.let { return it.connectLink(toolkit) }
         val authId = call("GET", "/auth_configs?limit=1&toolkit_slug=${q(toolkit)}").items().firstOrNull()?.str("id")
             ?: call("POST", "/auth_configs", buildJsonObject {
                 putJsonObject("toolkit") { put("slug", toolkit) }
@@ -110,6 +114,7 @@ class Composio(private val apiKey: String, private val userId: String) {
     }
 
     suspend fun execute(slug: String, args: JsonObject, version: String?): ExecResult {
+        mcp?.let { return it.execute(slug, args) }
         val r = call("POST", "/tools/execute/${q(slug)}", buildJsonObject {
             put("user_id", userId)
             put("arguments", args)
