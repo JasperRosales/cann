@@ -10,7 +10,7 @@ import kotlinx.serialization.json.*
  * A string that is exactly one placeholder takes the raw JSON value.
  */
 object Templates {
-    private val re = Regex("""\{\{\s*([^}]+?)\s*}}""")
+    private val re = Regex("""\{\{\s*([^\}]+?)\s*\}\}""")
 
     fun fill(e: JsonElement, outputs: List<JsonElement>, now: java.time.ZonedDateTime): JsonElement = when (e) {
         is JsonObject -> JsonObject(e.mapValues { fill(it.value, outputs, now) })

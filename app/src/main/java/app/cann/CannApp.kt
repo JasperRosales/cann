@@ -12,7 +12,7 @@ class CannApp : Application(), ImageLoaderFactory {
         super.onCreate()
         // Re-arm schedules (e.g. after an update) and skip past one-offs.
         Thread {
-            Store.get(this).db.value.workflows.forEach { Scheduler.sync(this, it, Scheduler.Mode.ENSURE) }
+            Store.get(this).db.value.workflows.forEach { runCatching { Scheduler.sync(this, it, Scheduler.Mode.ENSURE) } }
         }.start()
     }
 
