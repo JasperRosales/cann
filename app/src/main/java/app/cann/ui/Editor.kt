@@ -63,7 +63,7 @@ fun Modifier.dotGrid(color: Color) = drawBehind {
 }
 
 @Composable
-fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () -> Unit) {
+fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, startAi: Boolean = false, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val db by store.db.collectAsState()
     val orig = remember {
@@ -78,6 +78,7 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () 
     var openTrigger by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var saveTpl by remember { mutableStateOf(false) }
+    var aiOpen by remember { mutableStateOf(startAi) }
     val lastRun = db.runs.firstOrNull { it.workflowId == orig.id }
     // Results from "Test node" this session, by node index; cleared when nodes move.
     val tests = remember { mutableStateMapOf<Int, StepResult>() }
@@ -110,6 +111,7 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () 
             },
             navigationIcon = { IconButton(onClose) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } },
             actions = {
+                IconButton({ aiOpen = true }) { Icon(Icons.Outlined.AutoAwesome, "Ask AI", tint = P.accent) }
                 IconButton({ saveTpl = true }, enabled = steps.isNotEmpty()) { Icon(Icons.Outlined.BookmarkAdd, "Save as template") }
                 if (id != null) IconButton({ confirmDelete = true }) { Icon(Icons.Outlined.Delete, "Delete") }
                 if (id != null) IconButton({ Scheduler.sync(ctx, build()); Scheduler.runNow(ctx, orig.id) },
@@ -140,7 +142,17 @@ fun EditorScreen(store: Store, id: String?, seed: Workflow? = null, onClose: () 
             AddNode { pickAt = steps.size }
             Spacer(Modifier.height(20.dp))
             Text("Tap a node to edit · + between nodes to insert", fontSize = 12.sp, color = P.muted)
+            if (steps.isEmpty()) OutlinedButton({ aiOpen = true }, Modifier.padding(top = 12.dp)) {
+                Icon(Icons.Outlined.AutoAwesome, null, tint = P.accent); Spacer(Modifier.width(8.dp)); Text("Describe it to AI")
+            }
         }
+    }
+
+    if (aiOpen) AiDialog(db.settings, build().takeIf { steps.isNotEmpty() }, onDismiss = { aiOpen = false }) { w ->
+        if (name.isBlank() || steps.isEmpty()) name = w.name
+        schedule = w.schedule
+        steps.clear(); steps.addAll(w.steps); resetTests()
+        aiOpen = false
     }
 
     if (saveTpl) TemplateDialog(name, onDismiss = { saveTpl = false }) { n, d ->

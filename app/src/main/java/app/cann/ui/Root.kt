@@ -43,8 +43,8 @@ fun CannRoot() {
         // "tpl:<id>" opens a new flow seeded from that template.
         val tpl = id.removePrefix("tpl:").takeIf { id.startsWith("tpl:") }
             ?.let { t -> (BuiltinTemplates.all + db.templates).firstOrNull { it.id == t } }
-        EditorScreen(store, id.takeUnless { it.isEmpty() || tpl != null || it.startsWith("tpl:") },
-            seed = tpl?.flow, onClose = { editing = null })
+        EditorScreen(store, id.takeUnless { it.isEmpty() || it == "ai" || tpl != null || it.startsWith("tpl:") },
+            seed = tpl?.flow, startAi = id == "ai", onClose = { editing = null })
         return
     }
 

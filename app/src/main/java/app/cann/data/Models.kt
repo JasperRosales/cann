@@ -4,7 +4,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class Settings(val apiKey: String = "", val userId: String = "default")
+data class Settings(
+    val apiKey: String = "", val userId: String = "default",
+    /** OpenAI-compatible chat endpoint used by the AI flow builder. */
+    val aiUrl: String = AI_PRESETS[0].url, val aiKey: String = "", val aiModel: String = AI_PRESETS[0].model,
+)
 
 /**
  * One Composio tool call. [args] is a JSON object; strings may hold {{templates}}.

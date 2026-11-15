@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -120,6 +122,17 @@ private fun TemplateSheet(store: Store, mine: List<Template>, onDismiss: () -> U
             item { Text("New flow", style = MaterialTheme.typography.titleLarge) }
             item {
                 val shape = RoundedCornerShape(16.dp)
+                Row(Modifier.fillMaxWidth().clip(shape).background(P.accentSoft).border(1.dp, P.accent, shape)
+                    .clickable { onPick("ai") }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(32.dp), tint = P.accent); Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("Build with AI", fontWeight = FontWeight.Medium)
+                        Text("Describe what it should do, AI makes the nodes", fontSize = 12.sp, color = P.muted)
+                    }
+                }
+            }
+            item {
+                val shape = RoundedCornerShape(16.dp)
                 Row(Modifier.fillMaxWidth().clip(shape).border(1.dp, P.stroke, shape).clickable { onPick("") }.padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     IconTile("mi:bolt", "Blank", 40.dp); Spacer(Modifier.width(12.dp))
@@ -207,21 +220,49 @@ fun AppsScreen(s: Settings, m: Modifier) = ToolBrowser(s, m)
 
 @Composable
 fun SettingsScreen(store: Store, s: Settings, m: Modifier) {
+    val ctx = LocalContext.current
     var key by remember(s) { mutableStateOf(s.apiKey) }
     var user by remember(s) { mutableStateOf(s.userId) }
-    Column(m.fillMaxSize().padding(horizontal = 16.dp)) {
+    var aiUrl by remember(s) { mutableStateOf(s.aiUrl) }
+    var aiKey by remember(s) { mutableStateOf(s.aiKey) }
+    var aiModel by remember(s) { mutableStateOf(s.aiModel) }
+    val next = s.copy(apiKey = key.trim(), userId = user.trim().ifEmpty { "default" },
+        aiUrl = aiUrl.trim(), aiKey = aiKey.trim(), aiModel = aiModel.trim())
+    Column(m.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
         Header("Settings")
         OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text("Composio API key") },
             singleLine = true, visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
-        Text("Project key (ak_…) or MCP consumer key (ck_…) from dashboard.composio.dev.", fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
+        Hint("Project key (ak_…) or MCP consumer key (ck_…) from dashboard.composio.dev.")
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), label = { Text("User ID") }, singleLine = true)
-        Text("Your connected accounts are stored under this id.", fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(4.dp))
+        Hint("Your connected accounts are stored under this id.")
+
+        SectionLabel("AI assistant")
+        Hint("Describe a flow and AI builds the nodes. Pick a free provider, get a key, paste it below.")
+        Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AI_PRESETS.forEach { p ->
+                FilterChip(aiUrl == p.url, { aiUrl = p.url; aiModel = p.model }, { Text(p.name) })
+            }
+        }
+        AI_PRESETS.firstOrNull { it.url == aiUrl }?.let { p ->
+            TextButton({ ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.keyUrl))) }) {
+                Icon(Icons.Outlined.Key, null); Spacer(Modifier.width(6.dp)); Text("Get a free ${p.name} key")
+            }
+        }
+        OutlinedTextField(aiKey, { aiKey = it }, Modifier.fillMaxWidth(), label = { Text("AI API key") },
+            singleLine = true, visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(aiModel, { aiModel = it }, Modifier.fillMaxWidth(), label = { Text("Model") }, singleLine = true)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(aiUrl, { aiUrl = it }, Modifier.fillMaxWidth(), label = { Text("Endpoint (OpenAI-compatible)") },
+            singleLine = true)
         Spacer(Modifier.height(16.dp))
-        Button({ store.edit { it.copy(settings = Settings(key.trim(), user.trim().ifEmpty { "default" })) } },
-            enabled = key != s.apiKey || user != s.userId) { Text("Save") }
+        Button({ store.edit { it.copy(settings = next) } }, enabled = next != s) { Text("Save") }
     }
 }
+
+@Composable
+private fun Hint(t: String) = Text(t, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier = Modifier.padding(4.dp))
