@@ -30,4 +30,10 @@ class EngineTest {
         assertEquals(null, Scheduler.next(Schedule.Once(from - 1), from))
         assertEquals(from + 15 * 60_000L, Scheduler.next(Schedule.Interval(5), from))
     }
+
+    @Test fun versionCompare() {
+        assertEquals(true, app.cann.data.Updater.isNewer("0.10.0", "0.9.2"))
+        assertEquals(false, app.cann.data.Updater.isNewer("0.2.0", "0.2.0"))
+        assertEquals(false, app.cann.data.Updater.isNewer("0.1.9", "0.2"))
+    }
 }

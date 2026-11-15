@@ -2,7 +2,12 @@ package app.cann.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,48 +44,62 @@ val DAYS = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 @Composable
 fun Header(title: String, sub: String? = null) {
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 12.dp)) {
-        Text(title, fontSize = 30.sp, style = MaterialTheme.typography.headlineMedium)
-        sub?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) }
+        Text(title, fontSize = 30.sp, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium)
+        sub?.let { Text(it, color = P.muted, fontSize = 13.sp) }
     }
 }
 
 @Composable
 fun FlowsScreen(db: Db, m: Modifier, onOpen: (String) -> Unit, needsKey: Boolean, goSettings: () -> Unit) {
     val ctx = LocalContext.current
-    val store = Store.get(ctx)
     Box(m.fillMaxSize()) {
         LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
             item { Header("cann", "${db.workflows.size} workflow(s)") }
             if (needsKey) item {
-                Card(Modifier.padding(16.dp, 4.dp).fillMaxWidth().clickable(onClick = goSettings)) {
-                    Text("Add your Composio API key in Settings to start.", Modifier.padding(16.dp))
+                Card(Modifier.padding(16.dp, 4.dp).fillMaxWidth().clickable(onClick = goSettings),
+                    colors = CardDefaults.cardColors(containerColor = P.accentSoft)) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Key, null, tint = P.accent); Spacer(Modifier.width(12.dp))
+                        Text("Add your Composio API key in Settings to start.")
+                    }
                 }
             }
             items(db.workflows, key = { it.id }) { w ->
                 val last = db.runs.firstOrNull { it.workflowId == w.id }
-                Card(Modifier.padding(16.dp, 6.dp).fillMaxWidth().clickable { onOpen(w.id) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                val shape = RoundedCornerShape(18.dp)
+                Column(Modifier.padding(16.dp, 6.dp).fillMaxWidth().clip(shape).background(P.surfaceLo)
+                    .border(1.dp, P.stroke, shape).clickable { onOpen(w.id) }.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(w.name, style = MaterialTheme.typography.titleMedium)
-                            Text("${w.steps.size} step(s) · ${w.schedule.label()}", fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            w.nextRunAt?.let { Text("Next: ${fmtTime(it)}", fontSize = 12.sp, color = Amber) }
-                            last?.let {
-                                Text((if (it.ok) "✓ " else "✗ ") + fmtTime(it.startedAt), fontSize = 12.sp,
-                                    color = if (it.ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
-                            }
+                            Text(w.schedule.label(), fontSize = 13.sp, color = P.muted)
                         }
                         IconButton({ Scheduler.runNow(ctx, w.id) }, enabled = w.steps.isNotEmpty()) {
-                            Icon(Icons.Outlined.PlayArrow, "Run now")
+                            Icon(Icons.Outlined.PlayArrow, "Run now", tint = P.success)
                         }
                         Switch(w.enabled, { on -> Scheduler.sync(ctx, w.copy(enabled = on)) },
                             enabled = w.schedule !is Schedule.Manual)
+                    }
+                    if (w.steps.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        // Mini pipeline: node icons joined by short lines.
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            w.steps.take(6).forEachIndexed { i, st ->
+                                if (i > 0) Box(Modifier.width(10.dp).height(2.dp).background(P.muted))
+                                StepIcon(st, 30.dp)
+                            }
+                            if (w.steps.size > 6) Text("  +${w.steps.size - 6}", fontSize = 12.sp, color = P.muted)
+                        }
+                    }
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        w.nextRunAt?.let { StatusPill("Next ${fmtTime(it)}", P.accent) }
+                        last?.let { StatusPill((if (it.ok) "✓ " else "✗ ") + fmtTime(it.startedAt), if (it.ok) P.success else P.danger) }
                     }
                 }
             }
         }
         ExtendedFloatingActionButton(onClick = { onOpen("") }, modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+            containerColor = P.accent, contentColor = P.onAccent,
             icon = { Icon(Icons.Outlined.Add, null) }, text = { Text("New flow") })
     }
 }
@@ -94,81 +113,31 @@ fun RunsScreen(runs: List<Run>, m: Modifier) {
             Column(Modifier.fillMaxWidth().clickable { open = if (open == r.id) null else r.id }.padding(20.dp, 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (r.ok) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline, null,
-                        tint = if (r.ok) Amber else MaterialTheme.colorScheme.error)
+                        tint = if (r.ok) P.success else P.danger)
                     Spacer(Modifier.width(10.dp))
                     Column {
                         Text(r.workflowName)
-                        Text("${fmtTime(r.startedAt)} · ${(r.endedAt - r.startedAt) / 1000.0}s", fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${fmtTime(r.startedAt)} · ${(r.endedAt - r.startedAt) / 1000.0}s", fontSize = 12.sp, color = P.muted)
                     }
                 }
                 if (open == r.id) r.steps.forEachIndexed { i, s ->
-                    Text("${i + 1}. ${s.toolSlug} " + if (s.ok) "✓" else "✗", Modifier.padding(top = 8.dp), fontSize = 13.sp)
-                    Text(s.output.take(1500), fontFamily = Mono, fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        StepIcon(Step(s.toolSlug), 24.dp); Spacer(Modifier.width(8.dp))
+                        Text("${i + 1}. ${s.toolSlug}", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Text(if (s.ok) "✓" else "✗", color = if (s.ok) P.success else P.danger)
+                    }
+                    Text(s.output.take(1500), fontFamily = Mono, fontSize = 11.sp, color = P.muted,
+                        modifier = Modifier.padding(top = 4.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(P.codeBg).padding(8.dp))
                 }
             }
-            HorizontalDivider()
+            HorizontalDivider(color = P.stroke)
         }
     }
 }
 
 @Composable
-fun AppsScreen(s: Settings, m: Modifier) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val api = remember(s) { Composio(s.apiKey, s.userId) }
-    var accounts by remember { mutableStateOf<List<Account>>(emptyList()) }
-    var kits by remember { mutableStateOf<List<Toolkit>>(emptyList()) }
-    var q by remember { mutableStateOf("") }
-    var err by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf<String?>(null) }
-
-    suspend fun refresh() {
-        err = null
-        runCatching { accounts = api.accounts(); kits = api.toolkits(q) }.onFailure { err = it.message }
-    }
-    LaunchedEffect(api, q) { kotlinx.coroutines.delay(300); refresh() }
-
-    LazyColumn(m.fillMaxSize()) {
-        item { Header("Apps", "Connected as \"${s.userId}\"") }
-        item {
-            OutlinedTextField(q, { q = it }, Modifier.padding(16.dp, 0.dp).fillMaxWidth(),
-                placeholder = { Text("Search apps (gmail, slack, notion…)") }, singleLine = true,
-                leadingIcon = { Icon(Icons.Outlined.Search, null) })
-        }
-        err?.let { item { Text(it, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error) } }
-        items(kits, key = { it.slug }) { k ->
-            val acc = accounts.filter { it.toolkit == k.slug }
-            val active = acc.any { it.status == "ACTIVE" }
-            ListItem(
-                headlineContent = { Text(k.name) },
-                supportingContent = { Text(k.description, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 12.sp) },
-                trailingContent = {
-                    if (active) AssistChip({}, { Text("Connected") }, leadingIcon = { Icon(Icons.Outlined.Check, null) })
-                    else TextButton(enabled = busy == null, onClick = {
-                        busy = k.slug
-                        scope.launch {
-                            runCatching { api.connectLink(k.slug) }
-                                .onSuccess { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
-                                .onFailure { err = it.message }
-                            busy = null
-                        }
-                    }) { Text(if (busy == k.slug) "…" else if (acc.isNotEmpty()) acc.first().status.lowercase() else "Connect") }
-                },
-            )
-        }
-    }
-    // Pick up new connections when coming back from the browser.
-    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    DisposableEffect(owner) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) scope.launch { refresh() }
-        }
-        owner.lifecycle.addObserver(obs)
-        onDispose { owner.lifecycle.removeObserver(obs) }
-    }
-}
+fun AppsScreen(s: Settings, m: Modifier) = ToolBrowser(s, m)
 
 @Composable
 fun SettingsScreen(store: Store, s: Settings, m: Modifier) {

@@ -1,7 +1,8 @@
 <resources>
-    <color name="bg">#FF101114</color>
-    <color name="accent">#FFFFB547</color>
-    <style name="Theme.Cann" parent="android:Theme.Material.NoActionBar">
+    <color name="bg">#FFFAF3E1</color>
+    <color name="accent">#FFFF6D1F</color>
+    <color name="icon_bg">#FF17130F</color>
+    <style name="Theme.Cann" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>

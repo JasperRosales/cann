@@ -6,9 +6,17 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Settings(val apiKey: String = "", val userId: String = "default")
 
-/** One Composio tool call. [args] is a JSON object; strings may hold {{templates}}. */
+/**
+ * One Composio tool call. [args] is a JSON object; strings may hold {{templates}}.
+ * [icon] is an image URL or "mi:<name>" for a built-in glyph; null means the app logo.
+ */
 @Serializable
-data class Step(val toolSlug: String, val args: String = "{}", val note: String = "", val version: String? = null)
+data class Step(
+    val toolSlug: String, val args: String = "{}", val note: String = "", val version: String? = null,
+    val toolkit: String = "", val icon: String? = null, val logo: String? = null,
+) {
+    val app: String get() = toolkit.ifBlank { toolSlug.substringBefore('_').lowercase() }
+}
 
 @Serializable
 sealed interface Schedule {

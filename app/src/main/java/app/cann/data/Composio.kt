@@ -16,6 +16,7 @@ data class Tool(
     val toolkit: String, val version: String?, val params: List<Param>,
 )
 data class Account(val id: String, val toolkit: String, val status: String)
+data class Page<T>(val items: List<T>, val next: String?)
 data class ExecResult(val ok: Boolean, val data: JsonElement, val error: String?)
 
 /** Minimal Composio v3 REST client. */
@@ -49,21 +50,28 @@ class Composio(private val apiKey: String, private val userId: String) {
 
     private fun q(s: String) = URLEncoder.encode(s, "UTF-8")
 
-    suspend fun toolkits(search: String = ""): List<Toolkit> {
-        val r = call("GET", "/toolkits?limit=50" + if (search.isNotBlank()) "&search=${q(search)}" else "")
-        return r.items().map {
+    suspend fun toolkits(search: String = ""): List<Toolkit> = toolkitPage(search).items
+
+    suspend fun toolkitPage(search: String = "", cursor: String? = null): Page<Toolkit> {
+        val r = call("GET", "/toolkits?limit=60" + (if (search.isNotBlank()) "&search=${q(search)}" else "") +
+            (cursor?.let { "&cursor=${q(it)}" } ?: ""))
+        return Page(r.items().map {
             val meta = it.obj("meta")
             Toolkit(it.str("slug").orEmpty(), it.str("name").orEmpty(), meta?.str("description").orEmpty(), meta?.str("logo"))
-        }
+        }, r.str("next_cursor"))
     }
 
-    suspend fun tools(toolkit: String?, search: String = ""): List<Tool> {
+    suspend fun tools(toolkit: String?, search: String = ""): List<Tool> = toolPage(toolkit, search).items
+
+    suspend fun toolPage(toolkit: String?, search: String = "", cursor: String? = null): Page<Tool> {
         val p = buildString {
-            append("/tools?limit=50")
+            append("/tools?limit=60")
             if (!toolkit.isNullOrBlank()) append("&toolkit_slug=${q(toolkit)}")
             if (search.isNotBlank()) append("&search=${q(search)}")
+            cursor?.let { append("&cursor=${q(it)}") }
         }
-        return call("GET", p).items().map(::parseTool)
+        val r = call("GET", p)
+        return Page(r.items().map(::parseTool), r.str("next_cursor"))
     }
 
     suspend fun tool(slug: String): Tool = parseTool(call("GET", "/tools/${q(slug)}"))
